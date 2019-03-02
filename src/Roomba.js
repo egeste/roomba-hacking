@@ -93,16 +93,16 @@ export const MAIN_BRUSH_OFF = 0xFB
 export const ALL_CLEANING_MOTORS_ON = 0xFF
 export const ALL_CLEANING_MOTORS_OFF = 0x00
 
-export const stringFromBuffer = (telemetryBuffer, sensor) => {
-  return telemetryBuffer.slice(sensor, (sensor + 1)).toString()
+export const stringFromBuffer = (buffer, offset, bytes = 1) => {
+  return buffer.slice(offset, (offset + bytes)).toString()
 }
 
-export const decimalFromBuffer = (telemetryBuffer, sensor) => {
-  return telemetryBuffer.readUIntBE(sensor, 1)
+export const decimalFromBuffer = (buffer, offset, bytes = 1) => {
+  return buffer.readUIntBE(offset, bytes)
 }
 
-export const booleanFromBuffer = (telemetryBuffer, sensor) => {
-  return Boolean(decimalFromBuffer(telemetryBuffer, sensor))
+export const booleanFromBuffer = (buffer, offset, bytes = 1) => {
+  return Boolean(decimalFromBuffer(buffer, offset, bytes))
 }
 
 export const SENSOR_BUFFER_FORMATTERS = {

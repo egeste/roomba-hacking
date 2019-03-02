@@ -3,29 +3,29 @@ import throttle from 'lodash/throttle'
 import dualShock from 'dualshock-controller'
 import { scaleLinear } from 'd3-scale'
 
-// console.info('Initializing controller')
-// const controller = dualShock({
-//   config: 'dualshock4-generic-driver',
-//   analogStickSmoothing : true,
-//   accelerometerSmoothing : true
-// })
+console.info('Initializing controller')
+const controller = dualShock({
+  config: 'dualshock4-generic-driver',
+  analogStickSmoothing : true,
+  accelerometerSmoothing : true
+})
 
-// controller.on('error', error => {
-//   console.error('Controller error', error)
-// })
+controller.on('error', error => {
+  console.error('Controller error', error)
+})
 
-// // Add handler for graceful shutdown
-// const cleanupController = () => {
-//   controller.disconnect()
-//   console.info('Controller disconnected')
-// }
+// Add handler for graceful shutdown
+const cleanupController = () => {
+  controller.disconnect()
+  console.info('Controller disconnected')
+}
 
-// process.on('SIGINT', cleanupController)
-// process.on('SIGTERM', cleanupController)
+process.on('SIGINT', cleanupController)
+process.on('SIGTERM', cleanupController)
 
-// const analogValueScalar = scaleLinear()
-//   .domain([ 0, 255 ])
-//   .range([ -1, 1 ])
+const analogValueScalar = scaleLinear()
+  .domain([ 0, 255 ])
+  .range([ -1, 1 ])
 
 const roomba = new Roomba()
 roomba.connect().then(() => {

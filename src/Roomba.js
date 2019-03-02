@@ -109,7 +109,7 @@ export const booleanFromBuffer = (buffer, offset, bytes = 1) => {
 
 export const driveVelocityScalar = scaleLinear()
   .domain([ 1, -1 ])
-  .range([ -500, 500 ])
+  .range([ -50, 50 ])
 
 export const driveRadixScalar = scaleLinear()
   .domain([ -1, 1 ])

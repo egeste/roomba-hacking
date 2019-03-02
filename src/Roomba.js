@@ -1,5 +1,7 @@
-import { Socket } from 'net'
 import EventEmitter from 'events'
+
+import { Socket } from 'net'
+import { scaleLinear } from 'd3-scale'
 
 export const TCP_SESSION_TIMEOUT = (1000 * 30) // 30 sec
 export const TELEMETRY_POLLING_INTERVAL = (1000 / 20) // One/nth of a second
@@ -79,7 +81,7 @@ export const LED_DIRT_OFF = 0xFE
 export const LED_MAX_ON = 0x02
 export const LED_MAX_OFF = 0xFD
 export const LED_STATUS_OFF = 0x0F
-export const LED_STATUS_AMBAR = 0x30
+export const LED_STATUS_AMBER = 0x30
 export const LED_STATUS_RED = 0x10
 export const LED_STATUS_GREEN = 0x20
 
@@ -105,33 +107,48 @@ export const booleanFromBuffer = (buffer, offset, bytes = 1) => {
   return Boolean(decimalFromBuffer(buffer, offset, bytes))
 }
 
+export const driveVelocityScalar = scaleLinear()
+  .domain([ 1, -1 ])
+  .range([ -500, 500 ])
+
+export const driveRadixScalar = scaleLinear()
+  .domain([ -1, 1 ])
+  .range([ -2000, 2000 ])
+
 export const SENSOR_BUFFER_FORMATTERS = {
-  [BUMPWHEELDROPS_SENSOR]: decimalFromBuffer,
   [WALL_SENSOR]: booleanFromBuffer,
-  [CLIFFT_LEFT_SENSOR]: booleanFromBuffer,
-  [CLIFFT_FRONT_LEFT_SENSOR]: booleanFromBuffer,
-  [CLIFFT_FRONT_RIGHT_SENSOR]: booleanFromBuffer,
-  [CLIFFT_RIGHT_SENSOR]: booleanFromBuffer,
-  [VIRTUAL_WALL_SENSOR]: booleanFromBuffer,
-  [MOTOR_OVERCURRENTS_SENSOR]: stringFromBuffer,
-  [DIRT_DETECTOR_LEFT_SENSOR]: stringFromBuffer,
-  [DIRT_DETECTOR_RIGHT_SENSOR]: stringFromBuffer,
-  [REMOTE_OPCODE_SENSOR]: stringFromBuffer,
   [BUTTONS_SENSOR]: stringFromBuffer,
-  [DISTANCE_MSB_SENSOR]: decimalFromBuffer,
-  [DISTANCE_LSB_SENSOR]: decimalFromBuffer,
   [ANGLE_MSB_SENSOR]: decimalFromBuffer,
   [ANGLE_LSB_SENSOR]: decimalFromBuffer,
-  [CHARGING_STATE_SENSOR]: decimalFromBuffer,
+  [CHARGE_MSB_SENSOR]: decimalFromBuffer,
+  [CHARGE_LSB_SENSOR]: decimalFromBuffer,
   [VOLTAGE_MSB_SENSOR]: decimalFromBuffer,
   [VOLTAGE_LSB_SENSOR]: decimalFromBuffer,
   [CURRENT_MSB_SENSOR]: decimalFromBuffer,
   [CURRENT_LSB_SENSOR]: decimalFromBuffer,
   [TEMPERATURE_SENSOR]: decimalFromBuffer,
-  [CHARGE_MSB_SENSOR]: decimalFromBuffer,
-  [CHARGE_LSB_SENSOR]: decimalFromBuffer,
+  [CLIFFT_LEFT_SENSOR]: booleanFromBuffer,
   [CAPACITY_MSB_SENSOR]: decimalFromBuffer,
-  [CAPACITY_LSB_SENSOR]: decimalFromBuffer
+  [CAPACITY_LSB_SENSOR]: decimalFromBuffer,
+  [CLIFFT_RIGHT_SENSOR]: booleanFromBuffer,
+  [VIRTUAL_WALL_SENSOR]: booleanFromBuffer,
+  [DISTANCE_MSB_SENSOR]: decimalFromBuffer,
+  [DISTANCE_LSB_SENSOR]: decimalFromBuffer,
+  [REMOTE_OPCODE_SENSOR]: stringFromBuffer,
+  [BUMPWHEELDROPS_SENSOR]: decimalFromBuffer,
+  [CHARGING_STATE_SENSOR]: decimalFromBuffer,
+  [CLIFFT_FRONT_LEFT_SENSOR]: booleanFromBuffer,
+  [CLIFFT_FRONT_RIGHT_SENSOR]: booleanFromBuffer,
+  [MOTOR_OVERCURRENTS_SENSOR]: stringFromBuffer,
+  [DIRT_DETECTOR_LEFT_SENSOR]: stringFromBuffer,
+  [DIRT_DETECTOR_RIGHT_SENSOR]: stringFromBuffer
+}
+
+export const prepare16BitSignedInt = value => {
+  const hexValue = (`0000${(value).toString(16)}`).substr(-4)
+  const msBit = parseInt(hexValue.slice(0, 2), 16)
+  const lsBit = parseInt(hexValue.slice(2, 4), 16)
+  return [ msBit, lsBit ]
 }
 
 export default class Roomba extends EventEmitter {
@@ -143,11 +160,13 @@ export default class Roomba extends EventEmitter {
     this.socket.setTimeout(TCP_SESSION_TIMEOUT)
 
     // Event handlers
-    this.ready = false
-    this.socket.on('timeout', () => this.connect())
+    this.socket.on('ready', () => console.info('Socket connection ready'))
+    this.socket.on('timeout', () => this.resetConnection())
+    this.socket.on('error', error => console.error(error.message))
+    this.socket.on('close', error => { error && this.resetConnection() })
 
     this.spammingTelemetry = false
-    this.socket.on('data', (...args) => this.onSocketData(...args))
+    this.socket.on('data', this.onSocketData.bind(this))
     this.telemetry = {}
   }
 
@@ -165,36 +184,86 @@ export default class Roomba extends EventEmitter {
     })
   }
 
+  resetConnection() {
+    if (this.resetTimeout) return
+    console.info('Reconnecting...')
+    this.resetTimeout = setTimeout(() => {
+      delete this.resetTimeout
+      this.connect()
+    }, 1000)
+  }
+
   disconnect() {
     this.stopSpammingTelemetry()
     return new Promise(resolve => {
+      if (this.socket.pending) return resolve(this.socket)
       this.socket.end(undefined, undefined, () => {
         console.info('End socket')
-        resolve(this.socket.destroy())
+        resolve(this.socket.destroy().unref())
+      })
+    })
+  }
+
+  sendBytes(byteArray) {
+    if (this.socket.pending) {
+      console.warn('Cannot sendBytes on pending socket')
+      return Promise.resolve(this.socket)
+    }
+
+    return new Promise(resolve => {
+      return this.socket.write(Buffer.from(byteArray), () => {
+        return resolve(this.socket)
       })
     })
   }
 
   requestTelemetry() {
-    return new Promise((resolve, reject) => {
-      if (this.socket.pending) {
-        console.warn('Requested telemetry on pending socket')
-        return reject(this.socket)
-      }
+    return this.sendBytes([ COMMAND_SENSORS, 0 ])
+  }
 
-      this.socket.write(Buffer.from([
-        COMMAND_SENSORS, 0
-      ]), () => resolve(this.socket))
-    })
+  toggleSafeMode() {
+    console.info('toggleSafeMode')
+    return this.sendBytes([ COMMAND_SAFE, 0 ])
+  }
+
+  toggleCleaningMode() {
+    console.info('toggleCleaningMode')
+    return this.sendBytes([ COMMAND_CLEAN, 0 ])
+  }
+
+  toggleSpotMode() {
+    console.info('toggleSpotMode')
+    return this.sendBytes([ COMMAND_SPOT, 0 ])
+  }
+
+  toggleDockMode() {
+    console.info('toggleDockMode')
+    return this.sendBytes([ COMMAND_DOCK, 0 ])
+  }
+
+  drive(velocity = 0, radius = 0) {
+    const radiusBytes = prepare16BitSignedInt(driveRadixScalar(radius))
+    const velocityBytes = prepare16BitSignedInt(driveVelocityScalar(velocity))
+    return this.sendBytes([ COMMAND_DRIVE, ...radiusBytes, velocityBytes, 0 ])
   }
 
   onSocketData(dataBuffer) {
-    if (dataBuffer.length != SCI_NUMBER_OF_SENSORS) return
+    switch(dataBuffer.length) {
+      case SCI_NUMBER_OF_SENSORS: {
+        return this.onTelemetryData(dataBuffer)
+      }
+      // default: {
+      //   console.warn('UNHANDLED_DATA', dataBuffer)
+      // }
+    }
+  }
 
+  onTelemetryData(telemetryBuffer) {
     const sensors = Object.keys(SENSOR_BUFFER_FORMATTERS)
+
     this.telemetry = sensors.reduce((memo, sensor) => {
       const sensorFormatter = SENSOR_BUFFER_FORMATTERS[sensor]
-      return { ...memo, [sensor]: sensorFormatter(dataBuffer, parseInt(sensor)) }
+      return { ...memo, [sensor]: sensorFormatter(telemetryBuffer, parseInt(sensor)) }
     }, {})
 
     this.emit('telemetry', this.telemetry)

@@ -1,71 +1,66 @@
-import Roomba, {
-  WALL_SENSOR,
-  BUTTONS_SENSOR,
-  TEMPERATURE_SENSOR,
-  VIRTUAL_WALL_SENSOR,
-  REMOTE_OPCODE_SENSOR,
-  BUMPWHEELDROPS_SENSOR,
-  CHARGING_STATE_SENSOR,
-  MOTOR_OVERCURRENTS_SENSOR,
-  ANGLE_MSB_SENSOR, ANGLE_LSB_SENSOR,
-  CHARGE_MSB_SENSOR, CHARGE_LSB_SENSOR,
-  CURRENT_MSB_SENSOR, CURRENT_LSB_SENSOR,
-  VOLTAGE_MSB_SENSOR, VOLTAGE_LSB_SENSOR,
-  CAPACITY_MSB_SENSOR, CAPACITY_LSB_SENSOR,
-  DISTANCE_MSB_SENSOR, DISTANCE_LSB_SENSOR,
-  CLIFFT_LEFT_SENSOR, CLIFFT_FRONT_LEFT_SENSOR,
-  CLIFFT_FRONT_RIGHT_SENSOR, CLIFFT_RIGHT_SENSOR,
-  DIRT_DETECTOR_LEFT_SENSOR, DIRT_DETECTOR_RIGHT_SENSOR
-} from './Roomba'
+import Roomba from './Roomba'
+import throttle from 'lodash/throttle'
+import dualShock from 'dualshock-controller'
+import { scaleLinear } from 'd3-scale'
 
-const telemetryLabelMap = {
-  [WALL_SENSOR]: 'WALL_SENSOR',
-  [BUTTONS_SENSOR]: 'BUTTONS_SENSOR',
-  [ANGLE_MSB_SENSOR]: 'ANGLE_MSB_SENSOR',
-  [ANGLE_LSB_SENSOR]: 'ANGLE_LSB_SENSOR',
-  [CHARGE_MSB_SENSOR]: 'CHARGE_MSB_SENSOR',
-  [CHARGE_LSB_SENSOR]: 'CHARGE_LSB_SENSOR',
-  [VOLTAGE_MSB_SENSOR]: 'VOLTAGE_MSB_SENSOR',
-  [VOLTAGE_LSB_SENSOR]: 'VOLTAGE_LSB_SENSOR',
-  [CURRENT_MSB_SENSOR]: 'CURRENT_MSB_SENSOR',
-  [CURRENT_LSB_SENSOR]: 'CURRENT_LSB_SENSOR',
-  [TEMPERATURE_SENSOR]: 'TEMPERATURE_SENSOR',
-  [CLIFFT_LEFT_SENSOR]: 'CLIFFT_LEFT_SENSOR',
-  [CAPACITY_MSB_SENSOR]: 'CAPACITY_MSB_SENSOR',
-  [CAPACITY_LSB_SENSOR]: 'CAPACITY_LSB_SENSOR',
-  [CLIFFT_RIGHT_SENSOR]: 'CLIFFT_RIGHT_SENSOR',
-  [VIRTUAL_WALL_SENSOR]: 'VIRTUAL_WALL_SENSOR',
-  [DISTANCE_MSB_SENSOR]: 'DISTANCE_MSB_SENSOR',
-  [DISTANCE_LSB_SENSOR]: 'DISTANCE_LSB_SENSOR',
-  [REMOTE_OPCODE_SENSOR]: 'REMOTE_OPCODE_SENSOR',
-  [BUMPWHEELDROPS_SENSOR]: 'BUMPWHEELDROPS_SENSOR',
-  [CHARGING_STATE_SENSOR]: 'CHARGING_STATE_SENSOR',
-  [CLIFFT_FRONT_LEFT_SENSOR]: 'CLIFFT_FRONT_LEFT_SENSOR',
-  [CLIFFT_FRONT_RIGHT_SENSOR]: 'CLIFFT_FRONT_RIGHT_SENSOR',
-  [MOTOR_OVERCURRENTS_SENSOR]: 'MOTOR_OVERCURRENTS_SENSOR',
-  [DIRT_DETECTOR_LEFT_SENSOR]: 'DIRT_DETECTOR_LEFT_SENSOR',
-  [DIRT_DETECTOR_RIGHT_SENSOR]: 'DIRT_DETECTOR_RIGHT_SENSOR'
-}
+// console.info('Initializing controller')
+// const controller = dualShock({
+//   config: 'dualshock4-generic-driver',
+//   analogStickSmoothing : true,
+//   accelerometerSmoothing : true
+// })
+
+// controller.on('error', error => {
+//   console.error('Controller error', error)
+// })
+
+// // Add handler for graceful shutdown
+// const cleanupController = () => {
+//   controller.disconnect()
+//   console.info('Controller disconnected')
+// }
+
+// process.on('SIGINT', cleanupController)
+// process.on('SIGTERM', cleanupController)
+
+// const analogValueScalar = scaleLinear()
+//   .domain([ 0, 255 ])
+//   .range([ -1, 1 ])
 
 const roomba = new Roomba()
-
-const onShutdown = () => {
-  console.warn('Shutting down socket.')
-  roomba.disconnect().then(() => {
-    console.log('Socket closed.')
-    process.exit(0)
-  })
-}
-
-roomba.on('telemetry', telemetry => {
-  Object.keys(telemetry).forEach(sensor => {
-    console.log(telemetryLabelMap[sensor], ':', telemetry[sensor])
-  })
-})
-
 roomba.connect().then(() => {
+  // Add handler for graceful shutdown
+  const cleanupRoomba = () => {
+    roomba.disconnect().then(() => {
+      console.info('Roomba disconnected')
+    })
+  }
+
+  process.on('SIGINT', cleanupRoomba)
+  process.on('SIGTERM', cleanupRoomba)
+
   roomba.startSpammingTelemetry()
+
+  // Finally, bind up all of our stuff
+  controller.on('x:press', () => roomba.toggleCleaningMode())
+  controller.on('circle:press', () => roomba.toggleSpotMode())
+  controller.on('options:press', () => roomba.toggleSafeMode())
+  controller.on('psxButton:press', () => roomba.toggleDockMode())
+
+  controller.on('left:move', throttle(({ x, y }) => {
+    const radius = analogValueScalar(x)
+    const velocity = analogValueScalar(y)
+    roomba.drive(velocity, radius)
+  }), 100)
+
+  // roomba.toggleSafeMode()
+  //   .then(() => roomba.drive(1, 0))
+  //   .then(() => roomba.disconnect())
 })
 
-process.on('SIGINT', onShutdown)
-process.on('SIGTERM', onShutdown)
+// controller.on('left:move', data => console.log('left Moved: ' + data.x + ' | ' + data.y))
+// controller.on('right:move', data => console.log('right Moved: ' + data.x + ' | ' + data.y))
+// controller.on('square:press', ()=> console.log('square press'))
+// controller.on('square:release', () => console.log('square release'))
+
+

@@ -94,5 +94,6 @@ const CAPACITY_NODE = 'r19' // mAh
 // const BUTTONS_NODE = 'r10' ?
 ```
 
-lol, screw all that.
+### lol nope
+
 The TCP socket interface is way faster & more interesting - and there's source code for it at https://github.com/roowifi/API-Qt

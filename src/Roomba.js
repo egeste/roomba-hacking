@@ -9,36 +9,9 @@ export const TELEMETRY_POLLING_INTERVAL = (1000 / 20) // One/nth of a second
 export const ROOWIFI_DEFAULT_HOST = '10.0.0.2'
 export const ROOWIFI_DEFAULT_PORT = '9001'
 
-// Number of sensors in SCI specification
-export const SCI_NUMBER_OF_SENSORS = 26
-
-// Byte postion for each sensor in response frame
-export const BUMPWHEELDROPS_SENSOR = 0
-export const WALL_SENSOR = 1
-export const CLIFFT_LEFT_SENSOR = 2
-export const CLIFFT_FRONT_LEFT_SENSOR = 3
-export const CLIFFT_FRONT_RIGHT_SENSOR = 4
-export const CLIFFT_RIGHT_SENSOR = 5
-export const VIRTUAL_WALL_SENSOR = 6
-export const MOTOR_OVERCURRENTS_SENSOR = 7
-export const DIRT_DETECTOR_LEFT_SENSOR = 8
-export const DIRT_DETECTOR_RIGHT_SENSOR = 9
-export const REMOTE_OPCODE_SENSOR = 10
-export const BUTTONS_SENSOR = 11
-export const DISTANCE_MSB_SENSOR = 12
-export const DISTANCE_LSB_SENSOR = 13
-export const ANGLE_MSB_SENSOR = 14
-export const ANGLE_LSB_SENSOR = 15
-export const CHARGING_STATE_SENSOR = 16
-export const VOLTAGE_MSB_SENSOR = 17
-export const VOLTAGE_LSB_SENSOR = 18
-export const CURRENT_MSB_SENSOR = 19
-export const CURRENT_LSB_SENSOR = 20
-export const TEMPERATURE_SENSOR = 21
-export const CHARGE_MSB_SENSOR = 22
-export const CHARGE_LSB_SENSOR = 23
-export const CAPACITY_MSB_SENSOR = 24
-export const CAPACITY_LSB_SENSOR = 25
+// Message packet types
+export const STREAM_RESPONSE_PACKET = 19
+export const VIRTUAL_WALL_PACKET = 13
 
 // Battery Charging States
 export const CHARGING_STATE_NO_CHARGING = 0
@@ -62,6 +35,7 @@ export const COMMAND_SONG = 140
 export const COMMAND_PLAY = 141
 export const COMMAND_SENSORS = 142
 export const COMMAND_DOCK = 143
+export const COMMAND_STREAM = 148
 
 // Number of parameters of Led commands
 export const LEDS_NUM_PARAMETERS = 3
@@ -95,6 +69,13 @@ export const MAIN_BRUSH_OFF = 0xFB
 export const ALL_CLEANING_MOTORS_ON = 0xFF
 export const ALL_CLEANING_MOTORS_OFF = 0x00
 
+export const sixteenBitSignedInteger = value => {
+  const hexValue = (`0000${(value).toString(16)}`).substr(-4)
+  const msBit = parseInt(hexValue.slice(0, 2), 16)
+  const lsBit = parseInt(hexValue.slice(2, 4), 16)
+  return [ msBit, lsBit ]
+}
+
 export const stringFromBuffer = (buffer, offset, bytes = 1) => {
   return buffer.slice(offset, (offset + bytes)).toString()
 }
@@ -106,14 +87,6 @@ export const decimalFromBuffer = (buffer, offset, bytes = 1) => {
 export const booleanFromBuffer = (buffer, offset, bytes = 1) => {
   return Boolean(decimalFromBuffer(buffer, offset, bytes))
 }
-
-export const driveVelocityScalar = scaleLinear()
-  .domain([ 1, -1 ])
-  .range([ -50, 50 ])
-
-export const driveRadixScalar = scaleLinear()
-  .domain([ -1, 1 ])
-  .range([ -2000, 2000 ])
 
 export const SENSOR_BUFFER_FORMATTERS = {
   [WALL_SENSOR]: booleanFromBuffer,
@@ -144,13 +117,6 @@ export const SENSOR_BUFFER_FORMATTERS = {
   [DIRT_DETECTOR_RIGHT_SENSOR]: stringFromBuffer
 }
 
-export const prepare16BitSignedInt = value => {
-  const hexValue = (`0000${(value).toString(16)}`).substr(-4)
-  const msBit = parseInt(hexValue.slice(0, 2), 16)
-  const lsBit = parseInt(hexValue.slice(2, 4), 16)
-  return [ msBit, lsBit ]
-}
-
 export default class Roomba extends EventEmitter {
 
   constructor(...args) {
@@ -160,14 +126,10 @@ export default class Roomba extends EventEmitter {
     this.socket.setTimeout(TCP_SESSION_TIMEOUT)
 
     // Event handlers
-    this.socket.on('ready', () => console.info('Socket connection ready'))
-    this.socket.on('timeout', () => this.resetConnection())
-    this.socket.on('error', error => console.error(error.message))
-    this.socket.on('close', error => { error && this.resetConnection() })
-
-    this.spammingTelemetry = false
     this.socket.on('data', this.onSocketData.bind(this))
-    this.telemetry = {}
+    this.socket.on('timeout', () => this.resetConnection())
+    this.socket.on('close', error => console.error(error))
+    this.socket.on('error', error => console.error(error.message))
   }
 
   connect() {
@@ -194,7 +156,6 @@ export default class Roomba extends EventEmitter {
   }
 
   disconnect() {
-    this.stopSpammingTelemetry()
     return new Promise(resolve => {
       if (this.socket.pending) return resolve(this.socket)
       this.socket.end(undefined, undefined, () => {
@@ -217,77 +178,46 @@ export default class Roomba extends EventEmitter {
     })
   }
 
-  requestTelemetry() {
-    return this.sendBytes([ COMMAND_SENSORS, 0 ])
-  }
-
   toggleSafeMode() {
     console.info('toggleSafeMode')
     return this.sendBytes([ COMMAND_SAFE, 0 ])
+      .then(() => console.info('toggleSafeMode success'))
   }
 
   toggleCleaningMode() {
     console.info('toggleCleaningMode')
     return this.sendBytes([ COMMAND_CLEAN, 0 ])
+      .then(() => console.info('toggleCleaningMode success'))
   }
 
   toggleSpotMode() {
     console.info('toggleSpotMode')
     return this.sendBytes([ COMMAND_SPOT, 0 ])
+      .then(() => console.info('toggleSpotMode success'))
   }
 
   toggleDockMode() {
     console.info('toggleDockMode')
     return this.sendBytes([ COMMAND_DOCK, 0 ])
+      .then(() => console.info('toggleDockMode success'))
   }
 
-  drive(velocity = 0, radius = 0) {
-    const radiusBytes = prepare16BitSignedInt(driveRadixScalar(radius))
-    const velocityBytes = prepare16BitSignedInt(driveVelocityScalar(velocity))
-    return this.sendBytes([ COMMAND_DRIVE, ...radiusBytes, velocityBytes, 0 ])
+  toggleStreamMode(packets = []) {
+    console.info('toggleStreamMode')
+    return this.sendBytes([ COMMAND_STREAM, 1, VIRTUAL_WALL_PACKET, 0 ])
+      .then(() => console.info('toggleStreamMode success'))
   }
 
-  onSocketData(dataBuffer) {
-    switch(dataBuffer.length) {
-      case SCI_NUMBER_OF_SENSORS: {
-        return this.onTelemetryData(dataBuffer)
-      }
-      // default: {
-      //   console.warn('UNHANDLED_DATA', dataBuffer)
-      // }
-    }
+  onSocketData(packet) {
+    console.log(packet)
+    // const packetType = packet.slice(0, 1).toString().charCodeAt(0)
+    // switch(packetType) {
+    //   case STREAM_RESPONSE_PACKET: return this.onStreamData(packet)
+    // }
   }
 
-  onTelemetryData(telemetryBuffer) {
-    const sensors = Object.keys(SENSOR_BUFFER_FORMATTERS)
-
-    this.telemetry = sensors.reduce((memo, sensor) => {
-      const sensorFormatter = SENSOR_BUFFER_FORMATTERS[sensor]
-      return { ...memo, [sensor]: sensorFormatter(telemetryBuffer, parseInt(sensor)) }
-    }, {})
-
-    this.emit('telemetry', this.telemetry)
-  }
-
-  startSpammingTelemetry() {
-    if (!this.spammingTelemetryTimeout) {
-      console.info('Start telemetry spamming')
-      this.spammingTelemetryTimeout = setInterval(() => {
-        this.requestTelemetry()
-      }, TELEMETRY_POLLING_INTERVAL)
-    }
-
-    return this
-  }
-
-  stopSpammingTelemetry() {
-    if (this.spammingTelemetryTimeout) {
-      console.info('Stop telemetry spamming')
-      clearTimeout(this.spammingTelemetryTimeout)
-      delete this.spammingTelemetryTimeout
-    }
-
-    return this
+  onStreamData(packet) {
+    console.log(packet)
   }
 
 }

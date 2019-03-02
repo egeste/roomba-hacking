@@ -1,7 +1,10 @@
-import Roomba from './Roomba'
 import throttle from 'lodash/throttle'
 import dualShock from 'dualshock-controller'
 import { scaleLinear } from 'd3-scale'
+
+import Roomba, {
+  VIRTUAL_WALL_PACKET
+} from './Roomba'
 
 console.info('Initializing controller')
 const controller = dualShock({
@@ -39,7 +42,10 @@ roomba.connect().then(() => {
   process.on('SIGINT', cleanupRoomba)
   process.on('SIGTERM', cleanupRoomba)
 
-  roomba.startSpammingTelemetry()
+  // Start the data stream
+  roomba.toggleStreamMode([
+    VIRTUAL_WALL_PACKET
+  ])
 
   // Finally, bind up all of our stuff
   controller.on('x:press', () => roomba.toggleCleaningMode())
@@ -47,15 +53,16 @@ roomba.connect().then(() => {
   controller.on('options:press', () => roomba.toggleSafeMode())
   controller.on('psxButton:press', () => roomba.toggleDockMode())
 
-  controller.on('left:move', throttle(({ x, y }) => {
-    const radius = analogValueScalar(x)
-    const velocity = analogValueScalar(y)
-    roomba.drive(velocity, radius)
-  }), 100)
+  // controller.on('left:move', ({ x, y }) => {
+  //   const radius = analogValueScalar(x)
+  //   const velocity = analogValueScalar(y)
+  //   roomba.drive(velocity, radius)
+  // }, 100)
 
   // roomba.toggleSafeMode()
-  //   .then(() => roomba.drive(1, 0))
-  //   .then(() => roomba.disconnect())
+    // .then(() => roomba.drive(1, 0))
+    // .then(() => roomba.disconnect())
+    // .then(() => process.exit(0))
 })
 
 // controller.on('left:move', data => console.log('left Moved: ' + data.x + ' | ' + data.y))

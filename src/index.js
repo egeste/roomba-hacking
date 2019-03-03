@@ -26,9 +26,9 @@ const cleanupController = () => {
 process.on('SIGINT', cleanupController)
 process.on('SIGTERM', cleanupController)
 
-const analogValueScalar = scaleLinear()
+const analogYFloatScalar = scaleLinear()
   .domain([ 0, 255 ])
-  .range([ -1, 1 ])
+  .range([ 1, -1 ])
 
 const roomba = new Roomba()
 roomba.connect().then(() => {
@@ -42,22 +42,35 @@ roomba.connect().then(() => {
   process.on('SIGINT', cleanupRoomba)
   process.on('SIGTERM', cleanupRoomba)
 
-  // Start the data stream
-  roomba.toggleStreamMode([
-    VIRTUAL_WALL_PACKET
-  ])
+  // // Start the data stream
+  // roomba.toggleStreamMode([
+  //   VIRTUAL_WALL_PACKET
+  // ])
 
   // Finally, bind up all of our stuff
-  controller.on('x:press', () => roomba.toggleCleaningMode())
-  controller.on('circle:press', () => roomba.toggleSpotMode())
-  controller.on('options:press', () => roomba.toggleSafeMode())
   controller.on('psxButton:press', () => roomba.toggleDockMode())
 
-  // controller.on('left:move', ({ x, y }) => {
-  //   const radius = analogValueScalar(x)
-  //   const velocity = analogValueScalar(y)
-  //   roomba.drive(velocity, radius)
-  // }, 100)
+  // dpad buttons
+  controller.on('dpadUp:press', () => roomba.toggleSafeMode())
+  controller.on('dpadDown:press', () => roomba.toggleCleaningMode())
+  controller.on('dpadRight:press', () => roomba.toggleSpotMode())
+
+  // Analog controllers
+  const wheelSpeed = { left: 0, right: 0 }
+
+  const throttledDrivePWM = throttle(() => {
+    roomba.drivePWM(wheelSpeed.left, wheelSpeed.right)
+  }, 100)
+
+  controller.on('left:move', ({ y }) => {
+    wheelSpeed.left = analogYFloatScalar(y)
+    throttledDrivePWM()
+  })
+
+  controller.on('right:move', ({ y }) => {
+    wheelSpeed.right = analogYFloatScalar(y)
+    throttledDrivePWM()
+  })
 
   // roomba.toggleSafeMode()
     // .then(() => roomba.drive(1, 0))

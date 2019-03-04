@@ -1,4 +1,5 @@
 import EventEmitter from 'events'
+import TwosComplementBuffer from 'twos-complement-buffer'
 
 import { Socket } from 'net'
 import { scaleQuantize } from 'd3-scale'
@@ -23,17 +24,17 @@ export const COMMAND_DOCK = 143
 export const COMMAND_DRIVE_PWM = 146
 export const COMMAND_STREAM = 148
 
-// Utility methods
+// Util
+export const twosComplementBuffer = new TwosComplementBuffer(16, true)
 export const sixteenBitSignedInteger = value => {
-  const hexValue = (`0000${(value).toString(16)}`).substr(-4)
-  const msBit = parseInt(hexValue.slice(0, 2), 16)
-  const lsBit = parseInt(hexValue.slice(2, 4), 16)
-  return [ msBit, lsBit ]
+  const buffer = []
+  twosComplementBuffer.pack(buffer, value)
+  return buffer
 }
 
 // Scalars
 export const drivePWMScalar = scaleQuantize().domain([ -1, 1 ])
-  .range([ -128, -64, -32, -16, 0, 0, 0, 0, 0, 16, 32, 64, 128 ])
+  .range([ -127, -64, -32, -16, 0, 0, 0, 0, 0, 0, 0, 16, 32, 64, 127 ])
 
 export default class Roomba extends EventEmitter {
 

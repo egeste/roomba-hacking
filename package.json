@@ -12,7 +12,8 @@
   "dependencies": {
     "d3-scale": "^2.2.2",
     "dualshock-controller": "^1.1.1",
-    "lodash": "^4.17.11"
+    "lodash": "^4.17.11",
+    "twos-complement-buffer": "0.0.1"
   },
   "devDependencies": {
     "@babel/cli": "^7.2.3",

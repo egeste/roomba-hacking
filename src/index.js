@@ -58,18 +58,14 @@ roomba.connect().then(() => {
   // Analog controllers
   const wheelSpeed = { left: 0, right: 0 }
 
-  const throttledDrivePWM = throttle(() => {
-    roomba.drivePWM(wheelSpeed.left, wheelSpeed.right)
-  }, 100)
-
   controller.on('left:move', ({ y }) => {
     wheelSpeed.left = analogYFloatScalar(y)
-    throttledDrivePWM()
+    roomba.drivePWM(wheelSpeed.left, wheelSpeed.right)
   })
 
   controller.on('right:move', ({ y }) => {
     wheelSpeed.right = analogYFloatScalar(y)
-    throttledDrivePWM()
+    roomba.drivePWM(wheelSpeed.left, wheelSpeed.right)
   })
 
   // roomba.toggleSafeMode()

@@ -33,7 +33,7 @@ export const sixteenBitSignedInteger = value => {
 
 // Scalars
 export const drivePWMScalar = scaleQuantize().domain([ -1, 1 ])
-  .range([ -255, -128, -64, -32, -16, 0, 0, 0, 16, 32, 64, 128, 255 ])
+  .range([ -128, -64, -32, -16, 0, 0, 0, 0, 0, 16, 32, 64, 128 ])
 
 export default class Roomba extends EventEmitter {
 
@@ -123,12 +123,10 @@ export default class Roomba extends EventEmitter {
   drivePWM(leftWheelVelocityFloat, rightWheelVelocityFloat) {
     const leftWheelVelocity = drivePWMScalar(leftWheelVelocityFloat)
     const rightWheelVelocity = drivePWMScalar(rightWheelVelocityFloat)
-    const leftWheelVelocityData = sixteenBitSignedInteger(leftWheelVelocity)
-    const rightWheelVelocityData = sixteenBitSignedInteger(rightWheelVelocity)
     this.sendBytes([
       COMMAND_DRIVE_PWM,
-      ...rightWheelVelocityData,
-      ...leftWheelVelocityData,
+      ...sixteenBitSignedInteger(rightWheelVelocity),
+      ...sixteenBitSignedInteger(leftWheelVelocity),
       0
     ])
   }

@@ -44,6 +44,11 @@ roomba.connect().then(() => {
   controller.on('dpadDown:press', () => roomba.toggleCleaningMode())
   controller.on('dpadRight:press', () => roomba.toggleSpotMode())
 
+  // action buttons
+  controller.on('x:press', () => roomba.toggleMainBrush())
+  controller.on('square:press', () => roomba.toggleSideBrush())
+  controller.on('circle:press', () => roomba.toggleVacuum())
+
   // Analog controllers
   const analogInputs = { left: [0], right: [0] }
 

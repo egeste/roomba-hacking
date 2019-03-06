@@ -1,8 +1,9 @@
+import debounce from 'lodash/debounce'
 import EventEmitter from 'events'
 import TwosComplementBuffer from 'twos-complement-buffer'
 
 import { Socket } from 'net'
-import { scaleQuantize } from 'd3-scale'
+import { scaleQuantize, scaleLinear } from 'd3-scale'
 
 // Timeouts & intervals
 export const TCP_SESSION_TIMEOUT = (1000 * 30) // 30 sec
@@ -21,6 +22,7 @@ export const COMMAND_SAFE = 131
 export const COMMAND_SPOT = 134
 export const COMMAND_CLEAN = 135
 export const COMMAND_DOCK = 143
+export const COMMAND_MOTORS_PWM = 144
 export const COMMAND_DRIVE_PWM = 146
 export const COMMAND_STREAM = 148
 
@@ -33,8 +35,17 @@ export const sixteenBitSignedInteger = value => {
 }
 
 // Scalars
-export const drivePWMScalar = scaleQuantize().domain([ -1, 1 ])
+export const drivePWMScalar = scaleQuantize()
+  .domain([ -1, 1 ])
   .range([ -127, -64, -32, -16, 0, 0, 0, 0, 0, 0, 0, 16, 32, 64, 127 ])
+
+export const brushScalar = scaleLinear()
+  .domain([ -1, 1 ])
+  .range([ -127, 127 ])
+
+export const vacuumScalar = scaleLinear()
+  .domain([ 0, 1 ])
+  .range([ 0, 127 ])
 
 export default class Roomba extends EventEmitter {
 
@@ -49,6 +60,12 @@ export default class Roomba extends EventEmitter {
     this.socket.on('close', error => console.error(error))
     this.socket.on('error', error => console.error(error.message))
     // this.socket.on('data', this.onSocketData.bind(this))
+
+    // State machines
+    this.vacuumSpeed = 0
+    this.mainBrushSpeed = 0
+    this.sideBrushSpeed = 0
+    this.sendMotorBytes = debounce(this.sendMotorBytes.bind(this))
   }
 
   connect() {
@@ -119,6 +136,43 @@ export default class Roomba extends EventEmitter {
     console.info('toggleDockMode')
     return this.sendBytes([ COMMAND_DOCK, 0 ])
       .then(() => console.info('toggleDockMode success'))
+  }
+
+  toggleMainBrush() {
+    this.setMainBrush((this.mainBrushSpeed === 0) ? 127 : 0)
+  }
+
+  toggleSideBrush() {
+    this.setSideBrush((this.sideBrushSpeed === 0) ? 127 : 0)
+  }
+
+  toggleVacuum() {
+    this.setVacuum((this.vacuumSpeed === 0) ? 127 : 0)
+  }
+
+  setMainBrush(velocityFloat) {
+    this.mainBrushSpeed = brushScalar(velocityFloat)
+    this.sendMotorBytes()
+  }
+
+  setSideBrush(velocityFloat) {
+    this.sideBrushSpeed = brushScalar(velocityFloat)
+    this.sendMotorBytes()
+  }
+
+  setVacuum(velocityFloat) {
+    this.vacuumSpeed = vacuumScalar(velocityFloat)
+    this.sendMotorBytes()
+  }
+
+  sendMotorBytes() {
+    return this.sendBytes([
+      COMMAND_MOTORS_PWM,
+      this.mainBrushSpeed,
+      this.sideBrushSpeed,
+      this.vacuumSpeed,
+      0
+    ])
   }
 
   drivePWM(leftWheelVelocityFloat, rightWheelVelocityFloat) {
